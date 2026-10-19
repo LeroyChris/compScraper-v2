@@ -1,0 +1,48 @@
+name: Lomba Aggregator & Validator Pipeline
+
+on:
+  schedule:
+    # 23:59 WIB (UTC+7) = 16:59 UTC
+    - cron: '59 16 * * *'
+  workflow_dispatch:
+
+concurrency:
+  group: comp-scraper-run
+  cancel-in-progress: false
+
+jobs:
+  scrape-and-sync:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: 'pip'
+
+      - name: Install Dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Write Credentials File
+        env:
+          GOOGLE_SERVICE_ACCOUNT_JSON: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON }}
+        run: |
+          echo "$GOOGLE_SERVICE_ACCOUNT_JSON" > credentials.json
+
+      - name: Run Pipeline
+        env:
+          SHEET_ID: ${{ secrets.SHEET_ID }}
+        run: |
+          python main.py
+
+      - name: Cleanup Credentials
+        if: always()
+        run: |
+          rm -f credentials.json
