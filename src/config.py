@@ -43,4 +43,7 @@ GEMINI_API_KEY = (
 )
 GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-2.5-flash")
 
+OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY", "")
+OPENROUTER_MODEL = os.getenv("OPENROUTER_MODEL", "anthropic/claude-3.5-sonnet")
+
 KEYWORDS_FILE = DATA_DIR / "keywords.json"
