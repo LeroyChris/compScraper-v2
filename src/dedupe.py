@@ -20,6 +20,8 @@ STOPWORDS = {
     "international", "internasional", "tahun", "tingkat", "mahasiswa", "event", "fair",
     "2024", "2025", "2026", "2027", "ke", "dan", "di", "the", "of", "and", "se", "indonesia",
     "open", "call", "paper", "program", "2028", "2029", "seminar", "workshop",
+    # prize decorations: the same competition is advertised with and without them
+    "hadiah", "gratis", "juta", "jutaan", "jt", "ribu", "rp", "idr", "bonus",
 }
 
 JACCARD_THRESHOLD = 0.70

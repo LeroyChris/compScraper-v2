@@ -170,6 +170,20 @@ def is_expired(deadline: str | None, grace_days: int = 0) -> bool:
     return dt < (datetime.now().date() - timedelta(days=grace_days))
 
 
+def latest_dated_event(text: str | None) -> datetime | None:
+    """Latest explicitly dated moment mentioned in the text (year required).
+
+    Bare "12 Mei" is ignored: without a year it is ambiguous, and a wrong
+    guess would expire a live competition.
+    """
+    if not text:
+        return None
+    with_year = [c for c in _candidates(text) if c[1]]
+    if not with_year:
+        return None
+    return max(c[0] for c in with_year)
+
+
 def normalize_url(url: str | None) -> str:
     """Canonicalize a URL: lowercase host, strip tracking params + fragment.
 

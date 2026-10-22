@@ -88,6 +88,7 @@ class CompetitionRecord(BaseModel):
     confidence: float = Field(default=0.0, ge=0.0, le=1.0)
     status_review: TriageStatus = TriageStatus.MANUAL_CHECK
     scraped_at: str = ""
+    stale: bool = False  # free-form article whose event is over -> drop, not written
 
     @field_validator("title", "organizer", "location", "target", "fee", mode="before")
     @classmethod

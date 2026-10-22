@@ -78,8 +78,8 @@ class InfolombaitScraper(ArticleScraper, BaseScraper):
                 article = self.fetch_article(url)
                 if not article:
                     continue
-                record = self.build_record(article, f"{self.source_id}_{len(seen)}")
-                if is_expired(record.deadline, DEADLINE_GRACE_DAYS):
+                record = self.build_record(article, self._record_id(url))
+                if record.stale or is_expired(record.deadline, DEADLINE_GRACE_DAYS):
                     continue
                 records.append(record)
                 log.info("[%s] %s", record.school or "?", record.title[:70])

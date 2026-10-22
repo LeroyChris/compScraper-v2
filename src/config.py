@@ -31,6 +31,9 @@ TIMEOUT = int(os.getenv("TIMEOUT", "20"))
 MAX_RETRIES = int(os.getenv("MAX_RETRIES", "3"))
 # Grace period sebelum event dianggap kedaluwarsa (hari).
 DEADLINE_GRACE_DAYS = int(os.getenv("DEADLINE_GRACE_DAYS", "0"))
+# Artikel bebas-yang-tanpa-deadline: drop bila tanggal terakhir yang disebut
+# sudah lewat lebih dari N hari (event-nya selesai).
+STALE_ARTICLE_DAYS = int(os.getenv("STALE_ARTICLE_DAYS", "30"))
 
 # --- AI (opsional) -----------------------------------------------------------
 GEMINI_API_KEY = (

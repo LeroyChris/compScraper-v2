@@ -22,6 +22,27 @@ from src.normalizer import (
     parse_indonesian_date,
     split_links,
 )
+from src.sources.article import ArticleScraper
+
+
+class _NullLLM:
+    def extract(self, text, url):
+        return None
+
+
+class _FakeArticleScraper(ArticleScraper):
+    """Article scraper with a fixed page body -- no network."""
+
+    source_id = "fake"
+    own_domain = "fake.example"
+
+    def __init__(self, html):
+        self.html = html
+        self.llm = _NullLLM()
+
+    def get_text(self, url, **kwargs):
+        return self.html
+
 
 
 class TestDates(unittest.TestCase):
@@ -148,6 +169,34 @@ class TestClassifier(unittest.TestCase):
         self.assertTrue(self.classifier.is_noise("Loker Internship PT XYZ来了"))
         self.assertTrue(self.classifier.is_noise("Beasiswa Unggulan 2026"))
 
+    def test_competition_title_survives_noisy_body(self):
+        result = self.classifier.classify(
+            "ALGORITHMA FEST 3.0 2026",
+            "Seminar Festival - dapatkan wawasan melalui diskusi",
+            False,
+            True,
+        )
+        self.assertTrue(result["is_competition"])
+
+    def test_job_ad_title_is_dropped(self):
+        result = self.classifier.classify(
+            "Loker Internship PT XYZ", "Posisi terbuka untuk mahasiswa", False, False
+        )
+        self.assertFalse(result["is_competition"])
+
+    def test_listicle_articles_are_noise(self):
+        self.assertTrue(self.classifier.classify("9+ Cara Lomba Agar Bisa Menjadi Juara", "", False, False)["is_competition"] is False)
+        self.assertTrue(self.classifier.classify("24+ Cara Menjadi Juara Kelas di Sekolah", "", False, False)["is_competition"] is False)
+
+    def test_listicle_rule_only_applies_to_the_title(self):
+        result = self.classifier.classify(
+            "[GRATIS] Lomba Karya Tulis Ilmiah Nasional 2026",
+            "5+ Cara menulis karya tulis ilmiah yangfos",
+            False,
+            True,
+        )
+        self.assertTrue(result["is_competition"])
+
     def test_school_and_confidence(self):
         result = self.classifier.classify(
             "National AI Hackathon 2026", "programming and machine learning", True, True
@@ -179,6 +228,15 @@ class TestDedupe(unittest.TestCase):
         dup, reason = deduper.is_duplicate(record)
         self.assertTrue(dup, reason)
 
+    def test_prize_decoration_does_not_hide_duplicates(self):
+        deduper = Deduplicator(known_entries=[("[GRATIS] Lomba Karya Tulis Ilmiah Nasional 2026", None)])
+        record = CompetitionRecord(
+            id="informasilomba_13", source_id="informasilomba",
+            title="[GRATIS] Lomba Karya Tulis Ilmiah Nasional 2026, Hadiah 330 Juta",
+        )
+        dup, reason = deduper.is_duplicate(record)
+        self.assertTrue(dup, reason)
+
 
 class TestRecord(unittest.TestCase):
     def test_row_shape(self):
@@ -201,6 +259,72 @@ class TestRecord(unittest.TestCase):
             id="x", source_id="s", title="t", deadline="2026-99-99"
         )
         self.assertIsNone(record.deadline)
+
+
+class TestArticleParsing(unittest.TestCase):
+    """Article sources: the page URL must survive outbound links in the body."""
+
+    HTML = """
+    <html><body><article>
+      <h1 class="entry-title">Contoh Lomba 2026</h1>
+      <div class="entry-content">
+        <p>Informasi lebih lanjut di <a href="https://blog.example.com/report/">dari blog</a>.</p>
+        <p>Tautan pendaftaran: <a href="https://form.lomba.id/daftar">https://form.lomba.id/daftar</a></p>
+        <p>Daftar: registrasi.lomba.id</p>
+      </div>
+    </article></body></html>
+    """
+
+    def setUp(self):
+        self.scraper = _FakeArticleScraper(self.HTML)
+
+    def test_article_url_survives_outbound_links(self):
+        article = self.scraper.fetch_article("https://fake.example/2026/10/contoh/")
+        self.assertEqual(article["url"], "https://fake.example/2026/10/contoh/")
+
+    def test_registration_link_wins_over_reference_link(self):
+        article = self.scraper.fetch_article("https://fake.example/2026/10/contoh/")
+        reg, _ = split_links(article["links"], "fake.example")
+        self.assertEqual(reg, "https://form.lomba.id/daftar")
+
+    def test_bare_host_is_usable_registration_link(self):
+        article = self.scraper.fetch_article("https://fake.example/2026/10/contoh/")
+        self.assertIn(
+            "https://registrasi.lomba.id", [lk["url"] for lk in article["links"]]
+        )
+
+    def test_stale_article_is_flagged(self):
+        scraper = _FakeArticleScraper(
+            "<html><body><article><h1 class='entry-title'>Lama</h1>"
+            "<div class='entry-content'><p>Acara 1 Januari 2020.</p></div>"
+            "</article></body></html>"
+        )
+        record = scraper.build_record(
+            scraper.fetch_article("https://fake.example/2020/01/lama/"), "x"
+        )
+        self.assertTrue(record.stale)
+
+    def test_past_year_in_title_is_stale(self):
+        scraper = _FakeArticleScraper(
+            "<html><body><article><h1 class='entry-title'>Lomba Puisi Nasional 2025</h1>"
+            "<div class='entry-content'><p>Formulir tersedia.</p></div>"
+            "</article></body></html>"
+        )
+        record = scraper.build_record(
+            scraper.fetch_article("https://fake.example/2025/01/puisi/"), "x"
+        )
+        self.assertTrue(record.stale)
+
+    def test_fresh_article_is_not_stale(self):
+        scraper = _FakeArticleScraper(
+            "<html><body><article><h1 class='entry-title'>Baru</h1>"
+            "<div class='entry-content'><p>Acara 1 Januari 2099.</p></div>"
+            "</article></body></html>"
+        )
+        record = scraper.build_record(
+            scraper.fetch_article("https://fake.example/2099/01/baru/"), "x"
+        )
+        self.assertFalse(record.stale)
 
 
 if __name__ == "__main__":

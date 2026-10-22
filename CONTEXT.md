@@ -50,3 +50,17 @@ Tanggal **batas akhir pendaftaran** (bukan tanggal acara). Format `YYYY-MM-DD`.
 Lomba yang deadline-nya sudah lewat tidak ditulis (`DEADLINE_GRACE_DAYS` untuk
 toleransi). Deadline `-` berarti sumber tidak menyebut batas pendaftaran —
 kolom itu wajib diisi manual sebelum konten dibuat.
+
+## Sumber artikel bebas (infolombait, informasilomba)
+Kolom `Deadline`/`Penyelenggara` sering `-` karena prosanya tidak menyebut
+batas pendaftaran. Aturan tambahan:
+- Artikel yang judulnya menyebut tahun yang sudah lewat → event selesai, dibuang.
+- Tanpa deadline, tanggal terakhir di artikel yang boleh lewat > `STALE_ARTICLE_DAYS`
+  (30 hari) → dibuang, asal tahun artikel sama dengan tahun publikasi.
+- `URL Sumber` selalu URL artikel; link pendaftaran luar masuk ke `Link Pendaftaran`.
+- ID baris = `<source>_<yyyymm>_<slug>` — unik per URL.
+
+## Catatan implementasi
+- `gspread.delete_rows(start, end)` memakai indeks **1-based inklusif** (bukan 0-based).
+- Loop yang sama-sama memakai nama variabel `url` pernah menimpa URL artikel
+  (lihat regression test `test_article_url_survives_outbound_links`).

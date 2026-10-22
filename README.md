@@ -90,7 +90,10 @@ python test_pipeline.py
 
 `SHEET_ID`, `GOOGLE_SERVICE_ACCOUNT_FILE` (atau `GOOGLE_SERVICE_ACCOUNT_JSON`),
 `SHEET_AUDIT_TAB`, `MAX_ITEMS_PER_RUN`, `MIN/MAX_DELAY_SECONDS`, `TIMEOUT`,
-`MAX_RETRIES`, `DEADLINE_GRACE_DAYS`, `GEMINI_API_KEY` (opsional).
+`MAX_RETRIES`, `DEADLINE_GRACE_DAYS`, `STALE_ARTICLE_DAYS`, `GEMINI_API_KEY` (opsional).
+
+Tab audit diambil dari `SHEET_AUDIT_TAB`; bila tab itu tidak ada, scraper
+memakai `Tab Audit` lalu `DRAFT`.
 
 ## Kurasi (Apps Script)
 

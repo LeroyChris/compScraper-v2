@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import re
 from datetime import datetime, timedelta, timezone
 
 from bs4 import BeautifulSoup
@@ -44,10 +45,21 @@ class InformasilombaScraper(ArticleScraper, BaseScraper):
         soup = BeautifulSoup(html, "xml")
         return [tag.get_text(strip=True) for tag in soup.find_all("loc")]
 
+    @staticmethod
+    def _is_recent(url: str, min_year: int) -> bool:
+        """Keep only posts from the current or previous calendar year.
+
+        The sitemap reaches back to 2017; those competitions are long dead and
+        only cost fetch time.
+        """
+        m = re.search(r"/(20\d{2})/\d{1,2}/", url)
+        return bool(m) and int(m.group(1)) >= min_year
+
     def scrape(self, limit: int, known_urls: set[str] | None = None) -> list[CompetitionRecord]:
         known_urls = set(known_urls or ())
         records: list[CompetitionRecord] = []
         seen: set[str] = set()
+        min_year = datetime.now().year - 1
 
         for sitemap in self._sitemaps():
             if len(records) >= limit:
@@ -57,14 +69,16 @@ class InformasilombaScraper(ArticleScraper, BaseScraper):
                     break
                 if url in seen or normalize_url(url) in known_urls:
                     continue
+                if not self._is_recent(url, min_year):
+                    continue
                 seen.add(url)
 
                 self.polite_sleep()
                 article = self.fetch_article(url)
                 if not article:
                     continue
-                record = self.build_record(article, f"{self.source_id}_{len(seen)}")
-                if is_expired(record.deadline, DEADLINE_GRACE_DAYS):
+                record = self.build_record(article, self._record_id(url))
+                if record.stale or is_expired(record.deadline, DEADLINE_GRACE_DAYS):
                     continue
                 records.append(record)
                 log.info("[%s] %s", record.school or "?", record.title[:70])

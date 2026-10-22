@@ -12,6 +12,7 @@ from datetime import datetime, timedelta, timezone
 
 from bs4 import BeautifulSoup
 
+from src.config import STALE_ARTICLE_DAYS
 from src.llm import LLMExtractor
 from src.models import CompetitionRecord, sanitize_text
 from src.normalizer import (
@@ -23,11 +24,19 @@ from src.normalizer import (
     guess_organizer,
     guess_target,
     html_to_text,
+    latest_dated_event,
     split_links,
 )
 
 log = logging.getLogger("compScraper-v2")
 WIB = timezone(timedelta(hours=7))
+
+BARE_LINK_RE = re.compile(
+    r"\b(?:daftar|pendaftaran|registrasi|formulir|form)\s*[:\-]?\s*"
+    r"((?:[a-z0-9-]+\.)+[a-z]{2,}(?:/[^\s<>\"']*)?)",
+    re.IGNORECASE,
+)
+PUB_YEAR_RE = re.compile(r"/(20\d{2})/\d{1,2}/")
 
 
 class ArticleScraper:
@@ -73,14 +82,45 @@ class ArticleScraper:
         if content_el:
             for a in content_el.find_all("a", href=True):
                 links.append({"text": a.get_text(strip=True).lower(), "url": a["href"].strip()})
+        index = {lk["url"]: lk for lk in links}
 
         # Blogger/WordPress often print the registration URL as plain text.
-        for raw in re.findall(r"https?://[^\s<>\"']+", text):
-            url = raw.rstrip(".,;:)]}\"'")
-            if url not in {lk["url"] for lk in links}:
-                links.append({"text": "", "url": url})
+        # Keep the preceding words as anchor text so keyword matching still works.
+        known = set(index)
+        for m in re.finditer(r"(https?://[^\s<>\"']+)", text):
+            plain = m.group(1).rstrip(".,;:)]}\"'")
+            ctx = text[max(0, m.start() - 80):m.start()].lower()
+            lk = index.get(plain)
+            if lk is not None:
+                # A bare auto-link (text is the URL) inherits the prose before it.
+                bare = not lk["text"] or lk["text"].startswith("http")
+                if bare:
+                    lk["text"] = ctx
+                continue
+            lk = {"text": ctx, "url": plain}
+            links.append(lk)
+            index[plain] = lk
+            known.add(plain)
+
+        # "Daftar: form.lomba.id" -- registration hosts printed without a scheme.
+        for m in BARE_LINK_RE.finditer(text):
+            host = m.group(1).rstrip(".,;:)]}")
+            link = "https://" + host
+            if link in known:
+                continue
+            lk = {"text": m.group(0).lower(), "url": link}
+            links.append(lk)
+            index[link] = lk
+            known.add(link)
 
         return {"url": url, "title": title, "text": text, "links": links}
+
+    def _record_id(self, url: str) -> str:
+        """Stable, readable, collision-free id: source + publication month + slug."""
+        m = re.search(r"/(20\d{2})/(\d{1,2})/", url)
+        slug = re.sub(r"[^a-z0-9]+", "-", url.rstrip("/").rsplit("/", 1)[-1].lower()).strip("-")
+        stamp = f"{m.group(1)}{m.group(2).zfill(2)}" if m else "000000"
+        return f"{self.source_id}_{stamp}_{slug[:28]}"
 
     def build_record(self, article: dict, record_id: str) -> CompetitionRecord:
         url = article["url"]
@@ -118,4 +158,28 @@ class ArticleScraper:
             source_url=normalize_url(url),
             description=(fields.get("description") or text)[:400],
             scraped_at=datetime.now(WIB).strftime("%d/%m/%Y %H:%M"),
+            stale=self._is_stale(text, article["title"], url, deadline),
         )
+
+    @staticmethod
+    def _is_stale(text: str, title: str, url: str, deadline: str | None) -> bool:
+        """True for a free-form article whose event is long over.
+
+        Two signals: the title names a year that has passed, or the article
+        carries no deadline while its latest dated moment is long gone (the year
+        must match the publication year of the permalink, so an old date quoted
+        inside a fresh article is ignored).
+        """
+        now_year = datetime.now().year
+        years = [int(y) for y in re.findall(r"\b(20\d{2})\b", title or "")]
+        if years and max(years) < now_year:
+            return True
+        if deadline:
+            return False
+        m = PUB_YEAR_RE.search(url)
+        if not m:
+            return False
+        latest = latest_dated_event(text)
+        if not latest or latest.year != int(m.group(1)):
+            return False
+        return (datetime.now().date() - latest.date()).days > STALE_ARTICLE_DAYS

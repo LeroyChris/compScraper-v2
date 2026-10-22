@@ -22,6 +22,20 @@ AUTO_APPROVE_AT = 0.85
 PERLU_REVIEW_AT = 0.50
 CONFIDENCE_CEILING = 90.0  # score that maps to confidence 1.0
 
+# "9+ Cara Lomba Agar Bisa Menjadi Juara" -- listicles, not competitions.
+# Anchored to the title: real competition articles use the same words in the body.
+TITLE_NOISE_RE = re.compile(
+    r"^\s*(\d+\s*\+\s*(cara|tips|ide|alasan|manfaat|langkah)|"
+    r"tips\s*(&|dan)\s*trick|trik\s*(&|dan)\s*tips|cara menjadi juara|"
+    r"cara\s*(&|dan)\s*syarat)",
+    re.IGNORECASE,
+)
+# A title that names a competition wins over a noisy body ("... Seminar Festival ...").
+COMPETITION_TITLE_RE = re.compile(
+    r"\b(lomba|kompetisi|competition|festival|fest|contest|olimpiade|olympiad)\b",
+    re.IGNORECASE,
+)
+
 
 class CompetitionClassifier:
     def __init__(self, keywords_file: Path = KEYWORDS_FILE):
@@ -45,8 +59,14 @@ class CompetitionClassifier:
 
     # -- layer 2 --------------------------------------------------------------
     def classify(self, title: str, description: str, has_deadline: bool, has_reg_url: bool) -> dict[str, Any]:
-        combined = f"{title} {description}".lower()
-        if self.is_noise(combined):
+        title_l, desc_l = title.lower(), description.lower()
+        looks_like_competition = bool(COMPETITION_TITLE_RE.search(title_l))
+        noise = (
+            TITLE_NOISE_RE.match(title_l)
+            or self.is_noise(title_l)
+            or (not looks_like_competition and self.is_noise(desc_l))
+        )
+        if noise:
             return {
                 "is_competition": False,
                 "school": "UMUM",
@@ -55,7 +75,6 @@ class CompetitionClassifier:
                 "status_review": TriageStatus.MANUAL_CHECK,
             }
 
-        title_l, desc_l = title.lower(), description.lower()
         scores: dict[str, int] = {}
         for school, patterns in self.schools.items():
             total = 0
