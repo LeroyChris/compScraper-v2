@@ -1,0 +1,59 @@
+{
+  "noise_patterns": [
+    "\\b(loker|lowongan kerja|job vacancy|job opening|rekrutmen|recruitment|hiring|career opportunity)\\b",
+    "\\b(beasiswa|scholarship|beasiswa penuh|penerimaan mahasiswa baru|pmb|jalur undangan)\\b",
+    "\\b(webinar|seminar|workshop|training|kopdar|bincang\\b|sharing session|talks? session)",
+    "\\b(magang|internship|kkn|praktik kerja magang)\\b",
+    "\\b(mentoring|coaching|simulasi wawancara|persiapan interview)\\b",
+    "\\b(peresmian|pelantikan|dies natalis|annual meeting|rapat kerja|rakor)\\b",
+    "\\b(open recruitment|rekrutmen anggota|pendaftaran anggota baru)\\b"
+  ],
+  "schools": {
+    "SLA": {
+      "keywords": {
+        "moot court": 30, "debat hukum": 30, "hukum": 18, "esai hukum": 25,
+        "legal": 25, "perdata": 25, "pidana": 25, "tribunal": 25,
+        "mediation": 20, "courtroom": 25, "hak asasi manusia": 25
+      }
+    },
+    "SPE": {
+      "keywords": {
+        "psikologi": 25, "pendidikan": 15, "guru": 18, "kesehatan mental": 25,
+        "teaching": 25, "edukasi": 18, "paud": 25, "konseling": 25,
+        "bimbingan belajar": 25, "pendidikan guru": 25
+      }
+    },
+    "SCD": {
+      "keywords": {
+        "desain grafis": 30, "ui/ux": 30, "poster": 18, "film": 18,
+        "fotografi": 25, "jurnalistik": 25, "komunikasi": 18, "videografi": 25,
+        "animasi": 25, "broadcast": 25, "branding": 25, "iklan": 20,
+        "content creator": 25, "copywriting": 25, "visual": 15
+      }
+    },
+    "SBE": {
+      "keywords": {
+        "business plan": 30, "bisnis": 25, "entrepreneur": 25, "investasi": 25,
+        "akuntansi": 25, "manajemen": 18, "case competition": 30, "marketing": 25,
+        "keuangan": 25, "finansial": 25, "ekonomi": 25, "startup": 25,
+        "business": 20, "ewms": 25, "trading": 20
+      }
+    },
+    "SEN": {
+      "keywords": {
+        "programming": 30, "coding": 30, "machine learning": 30,
+        "artificial intelligence": 30, "robotik": 30, "robot": 25, "iot": 30,
+        "hackathon": 30, "data science": 30, "elektronika": 25, "software": 25,
+        "web development": 25, "cyber security": 25, "informatika": 25,
+        "teknik": 18, "innovation": 20, "ctf": 25, "data mining": 25
+      }
+    },
+    "UMUM": {
+      "keywords": {
+        "keagamaan": 15, "mtq": 15, "olahraga": 15, "e-sports": 20,
+        "esai": 15, "puisi": 15, "karya tulis": 20, "debat": 20,
+        "lingkungan": 15, "penerimaan": 12, "sastra": 20, "musik": 18
+      }
+    }
+  }
+}

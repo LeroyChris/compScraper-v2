@@ -1,10 +1,18 @@
 # PRD: Lomba Aggregator & Validator System
 
 **Organisasi:** Cakrawala University
-**Versi:** 1.0 (Draft untuk review)
+**Versi:** 1.0 (Draft untuk review) — bagian §1–§13 diwarisi dari desain v1
 **Status:** Siap development setelah review tim Lomba dan Medsos
 **Pemilik Produk:** Tim Lomba
 **Pemilik Teknis:** Tim Engineering / Mahasiswa Teknik Informatika
+
+> **Catatan versi (2026-10-22):** implementasi yang berjalan sekarang adalah
+> **V2** (lihat §14). Differences utama terhadap desain v1 di bawah:
+> tab `Tab Audit` / `Master Data Lomba` / `Arsip Reject` (bukan `DRAFT`/`ARCHIVE`),
+> skema **15 kolom** (bukan 10), status `AUTO_APPROVE` / `PERLU_REVIEW` / `MANUAL_CHECK`
+> (bukan `Pending`/`Approved`/`Rejected`), multi-sumber, dan Gemini sebagai
+> fallback opsional untuk artikel bebas. Wherever §6–§8 berbeda dengan §14,
+> **§14 yang berlaku**.
 
 ---
 
@@ -428,3 +436,63 @@ Estimasi untuk satu engineer paruh waktu. Durasi dapat disesuaikan.
 - [ ] Dokumentasi README mencakup cara setup, cara menambah sumber, dan cara mengubah keyword.
 - [ ] Keputusan etika scraping sudah didokumentasikan.
 - [ ] Tim Lomba dan Tim Medsos sudah dilatih dan menyetujui alur kerja.
+
+---
+
+## 14. Implementasi V2 (berlaku)
+
+Berlaku sejak 2026-10-22. Bagian ini menggantikan detail §6.3, §7.4, dan §8
+yang bertentangan.
+
+### 14.1 Arsitektur
+
+```
+GitHub Actions (cron 59 16 * * *, 23:59 WIB)
+  -> SheetsSync: snapshot anti-leak (SEMUA tab)
+  -> 6 sumber (infolomba, luarkampus, puspresnas, infolombait,
+     informasilomba, logikaui)
+  -> normalizer (tanggal Indonesia, URL, heuristik field)
+  -> pydantic CompetitionRecord (validasi 15 kolom)
+  -> classifier (filter noise + School + Confidence)
+  -> dedupe (fingerprint + Jaccard 0.70 + deadline ±4 jam)
+  -> SheetsSync.append_items -> tab "Tab Audit"
+```
+
+### 14.2 Skema tab `Tab Audit` (15 kolom)
+
+| No | Kolom | Isi | Fallback |
+|----|-------|-----|----------|
+| A | ID | `{source_id}_{id sumber}` | - |
+| B | Judul Lomba | judul bersih | `-` |
+| C | Penyelenggara |{institusi penyelenggara} | `-` |
+| D | Lokasi | Online / Offline / Hybrid / bebas | `-` |
+| E | Sasaran | jenjang peserta | `-` |
+| F | Biaya | `GRATIS` / `Rp xx` / teks tabel harga | `-` |
+| G | Deadline | batas akhir pendaftaran, `YYYY-MM-DD` | `-` |
+| H | Rekomendasi School | SEN/SBE/SCD/SPE/SLA/UMUM | `UMUM` |
+| I | Confidence | 0.00-1.00 (blacklist) | 0.00 |
+| J | Status Review | AUTO_APPROVE / PERLU_REVIEW / MANUAL_CHECK | MANUAL_CHECK |
+| K | Link Pendaftaran | form/landing pendaftaran | URL artikel |
+| L | Link Panduan | guide/rulebook | `-` |
+| M | URL Sumber | URL artikel asal | `-` |
+| N | Deskripsi Singkat | ringkasan ≤400 karakter | kosong |
+| O | Tanggal Scrape | `DD/MM/YYYY HH:mm` WIB | - |
+
+Kolom wajib dari brief: C (Penyelenggara), B (Judul Lomba), F (Biaya),
+K (Link Pendaftaran), G (Deadline). Kolom I = blacklist.
+
+### 14.3 Status & tab
+
+- `Tab Audit`: inbox, satu-satunya tab yang ditulis scraper.
+- `Master Data Lomba`: hasil approve (menu Apps Script `scripts/Code.gs`).
+- `Arsip Reject`: hasil reject, tidak boleh dihapus.
+- Anti-leak: snapshot dari **semua tab** (URL Sumber + Judul + Deadline).
+
+### 14.4 Aturan scraping
+
+- Jeda antar request 2-4 detik, retry 3x dengan backoff untuk 429/5xx.
+- Lomba yang deadline-nya lewat tidak ditulis (`DEADLINE_GRACE_DAYS`).
+- Artikel bebas: heuristik lokal; Gemini hanya fallback bila `GEMINI_API_KEY` ada.
+- Poster/gambar dan link sosial tidak pernah dianggap link pendaftaran.
+- `puspresnas` memakai `verify=False` (chain TLS gov.go.id tak lengkap) —
+  ganti ke `True` setelah CA pemerintah terpasang.

@@ -11,18 +11,42 @@ Fakultas atau unit akademik target publikasi lomba.
 - **SLA**: School of Law (Ilmu Hukum).
 - **UMUM**: Lintas kategori (Keagamaan, Olahraga, Esai Umum, E-sports, non-spesifik).
 
+Bobot keyword per School ada di `data/keywords.json`. Tepat 1 School utama
+per baris (skor tertinggi); School sekunder hanya dicatat di log.
+
+## Confidence
+Skor 0.00–1.00 di kolom `Confidence` = **blacklist**: makin kecil, makin perlu
+ditinjau manual oleh Tim Lomba. Ambang: ≥ 0.85 `AUTO_APPROVE`, ≥ 0.50
+`PERLU_REVIEW`, di bawahnya `MANUAL_CHECK`.
+
 ## Status Review
-Status kurasi manual oleh Tim Lomba pada kolom `Status Review`:
-- **Pending**: Status bawaan data baru hasil scraping.
-- **Approved**: Lomba disetujui untuk dijadikan konten medsos.
-- **Rejected**: Lomba ditolak (tidak layak / expired / duplikat manual). Baris rejected TIDAK BOLEH dihapus demi integritas deduplikasi.
+Status yang ditulis scraper di kolom `Status Review`:
+- **AUTO_APPROVE**: keyword kuat, aman langsung dipindahkan Tim Medsos.
+- **PERLU_REVIEW**: kemungkinan besar relevan, perludicek cepat.
+- **MANUAL_CHECK**: tidak ada keyword yang cocok, wajib diperiksa manusia.
+
+Status kurasi manusia (diisi lewat `scripts/Code.gs`):
+- **Approved**: baris dipindahkan ke tab `Master Data Lomba`.
+- **Rejected**: baris dipindahkan ke tab `Arsip Reject`.
 
 ## Sheet Tabs
-- **DRAFT**: Tab utama penulisan hasil scrape dan kurasi aktif.
-- **ARCHIVE**: Tab opsional untuk menampung baris Approved/Rejected lama; tetap dibaca oleh deduplicator agar URL tidak ter-scrape ulang.
+- **Tab Audit**: inbox hasil scrape, 15 kolom. Satu-satunya tab yang ditulis scraper.
+- **Master Data Lomba**: baris Approved, sumber draft konten medsos.
+- **Arsip Reject**: baris Rejected, tetap dibaca deduplicator.
 
 ## Primary School Rule
-Aturan penugasan tepat 1 School utama pada kolom D (Rekomendasi School) per lomba berdasarkan skor bobot kata kunci tertinggi. Kemunculan School sekunder dicatat pada log eksekusi, tanpa menduplikasi baris.
+Aturan penugasan tepat 1 School utama pada kolom `Rekomendasi School` per lomba
+berdasarkan skor bobot kata kunci tertinggi. Kemunculan School sekunder dicatat
+pada log eksekusi, tanpa menduplikasi baris.
 
 ## Anti-Leak Deduplication
-Mekanisme pemeriksaan seluruh URL sumber (`Link Sumber`) dari seluruh tab (`DRAFT` dan `ARCHIVE`) tanpa memandang status review (Pending, Approved, maupun Rejected) sebelum data baru ditulis ke sheet.
+Mekanisme pemeriksaan seluruh URL sumber (`URL Sumber`) dari **seluruh tab**
+(`Tab Audit`, `Master Data Lomba`, `Arsip Reject`, dan tab lain) tanpa
+memekauli status review, sebelum data baru ditulis ke sheet. Kunci sekunder:
+`Judul Lomba` ternormalisasi + `Deadline` (toleransi ±4 jam).
+
+## Deadline
+Tanggal **batas akhir pendaftaran** (bukan tanggal acara). Format `YYYY-MM-DD`.
+Lomba yang deadline-nya sudah lewat tidak ditulis (`DEADLINE_GRACE_DAYS` untuk
+toleransi). Deadline `-` berarti sumber tidak menyebut batas pendaftaran —
+kolom itu wajib diisi manual sebelum konten dibuat.

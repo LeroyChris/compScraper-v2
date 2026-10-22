@@ -1,63 +1,121 @@
-"""Rule-based 6-School keyword classifier for Cakrawala University."""
+"""Two-layer classifier: noise filter + weighted school matching.
+
+Layer 1 drops non-competition content (job ads, scholarships, webinars, ...).
+Layer 2 scores the six Cakrawala schools and derives a confidence score that
+drives the audit triage (blacklist = MANUAL_CHECK).
+"""
 
 from __future__ import annotations
 
+import json
 import logging
 import re
+from pathlib import Path
+from typing import Any
+
+from src.config import KEYWORDS_FILE
+from src.models import CompetitionRecord, TriageStatus
 
 log = logging.getLogger("compScraper-v2")
 
-PRIORITY = ["SLA", "SPE", "SCD", "SBE", "SEN", "UMUM"]
-
-KEYWORDS: dict[str, list[str]] = {
-    "SLA": ["moot court", "hukum", "debat hukum", "esai hukum", "legal", "perdata", "pidana"],
-    "SPE": ["psikologi", "pendidikan", "guru", "kesehatan mental", "teaching", "edukasi", "paud", "konseling"],
-    "SCD": [
-        "desain grafis", "poster", "film", "fotografi", "jurnalistik",
-        "komunikasi", "ui/ux", "videografi", "animasi", "broadcast", "branding", "iklan"
-    ],
-    "SBE": [
-        "business plan", "bisnis", "entrepreneur", "investasi", "akuntansi",
-        "manajemen", "case competition", "marketing", "keuangan", "finansial", "ekonomi"
-    ],
-    "SEN": [
-        "programming", "coding", "machine learning", "artificial intelligence",
-        "robotik", "iot", "hackathon", "data science", "elektronika",
-        "software", "web development", "cyber security", "informatika", "teknik"
-    ],
-    "UMUM": ["keagamaan", "mtq", "olahraga", "e-sports", "esai", "puisi", "karya tulis", "debat"]
-}
+AUTO_APPROVE_AT = 0.85
+PERLU_REVIEW_AT = 0.50
+CONFIDENCE_CEILING = 90.0  # score that maps to confidence 1.0
 
 
-def classify_school(title: str, description: str) -> tuple[str, list[str]]:
-    """Determine primary School based on keyword weights with priority tie-break.
+class CompetitionClassifier:
+    def __init__(self, keywords_file: Path = KEYWORDS_FILE):
+        with open(keywords_file, encoding="utf-8") as f:
+            data = json.load(f)
 
-    Title match: weight 2
-    Description match: weight 1
+        self.noise_patterns = [
+            re.compile(p, re.IGNORECASE) for p in data.get("noise_patterns", [])
+        ]
 
-    Returns:
-        tuple (primary_school: str, secondary_schools: list[str])
-    """
-    title_l = title.lower()
-    desc_l = description.lower()
-    scores: dict[str, int] = {}
+        self.schools: dict[str, list[tuple[re.Pattern, int]]] = {}
+        for school, spec in data.get("schools", {}).items():
+            compiled = []
+            for keyword, weight in spec.get("keywords", {}).items():
+                compiled.append((re.compile(rf"\b{re.escape(keyword)}\b", re.IGNORECASE), weight))
+            self.schools[school] = compiled
 
-    for school, words in KEYWORDS.items():
-        score = 0
-        for w in words:
-            pattern = rf"\b{re.escape(w)}\b"
-            if re.search(pattern, title_l):
-                score += 2
-            elif re.search(pattern, desc_l):
-                score += 1
-        scores[school] = score
+    # -- layer 1 --------------------------------------------------------------
+    def is_noise(self, text: str) -> bool:
+        return any(p.search(text) for p in self.noise_patterns)
 
-    matched = [(school, score) for school, score in scores.items() if score > 0]
-    if not matched:
-        return "UMUM", []
+    # -- layer 2 --------------------------------------------------------------
+    def classify(self, title: str, description: str, has_deadline: bool, has_reg_url: bool) -> dict[str, Any]:
+        combined = f"{title} {description}".lower()
+        if self.is_noise(combined):
+            return {
+                "is_competition": False,
+                "school": "UMUM",
+                "confidence": 0.0,
+                "scores": {},
+                "status_review": TriageStatus.MANUAL_CHECK,
+            }
 
-    # Sort by score descending, then tie-break using PRIORITY rank
-    matched.sort(key=lambda x: (x[1], -PRIORITY.index(x[0])), reverse=True)
-    primary = matched[0][0]
-    secondaries = [s for s, _ in matched[1:] if s != "UMUM"]
-    return primary, secondaries
+        title_l, desc_l = title.lower(), description.lower()
+        scores: dict[str, int] = {}
+        for school, patterns in self.schools.items():
+            total = 0
+            for pattern, weight in patterns:
+                if pattern.search(title_l):
+                    total += weight * 2
+                elif pattern.search(desc_l):
+                    total += weight
+            if total > 0:
+                scores[school] = total
+
+        if not scores:
+            return {
+                "is_competition": True,
+                "school": "UMUM",
+                "confidence": 0.30,
+                "scores": {},
+                "status_review": TriageStatus.MANUAL_CHECK,
+            }
+
+        ranked = sorted(scores.items(), key=lambda kv: kv[1], reverse=True)
+        school, top_score = ranked[0]
+        confidence = min(top_score / CONFIDENCE_CEILING, 0.98)
+
+        # Completeness bonus: a record with a deadline and a registration link is
+        # far more likely to be a real, postable competition.
+        if has_deadline:
+            confidence += 0.03
+        if has_reg_url:
+            confidence += 0.03
+        confidence = round(min(confidence, 0.98), 2)
+
+        if confidence >= AUTO_APPROVE_AT:
+            status = TriageStatus.AUTO_APPROVE
+        elif confidence >= PERLU_REVIEW_AT:
+            status = TriageStatus.PERLU_REVIEW
+        else:
+            status = TriageStatus.MANUAL_CHECK
+
+        return {
+            "is_competition": True,
+            "school": school,
+            "confidence": confidence,
+            "scores": dict(ranked),
+            "status_review": status,
+        }
+
+    def enrich(self, record: CompetitionRecord) -> CompetitionRecord | None:
+        """Fill school/confidence/status on a record. Returns None if it is noise."""
+        result = self.classify(
+            record.title,
+            record.description,
+            bool(record.deadline),
+            record.registration_url != "-",
+        )
+        if not result["is_competition"]:
+            log.info("Noise drop [%s]: %s", record.id, record.title[:60])
+            return None
+
+        record.school = result["school"]
+        record.confidence = result["confidence"]
+        record.status_review = result["status_review"]
+        return record
